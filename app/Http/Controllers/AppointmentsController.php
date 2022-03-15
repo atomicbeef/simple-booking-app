@@ -18,7 +18,7 @@ class AppointmentsController extends Controller
         $appointment = Appointments::create([ 'date' => $date, 'name' => $name ]);
         if ($appointment) {
             // Successfully created
-            return response('', 201);
+            return response($appointment->id, 201);
         }
 
         // There was an error
@@ -28,8 +28,7 @@ class AppointmentsController extends Controller
     // Return an array of all appointments
     public function show()
     {
-        // Order the appointments by date in order to make it easier for the client to display past and future appointments
-        $appointments = Appointments::all()->sortBy('date');
+        $appointments = Appointments::all();
 
         return response()->json([ 'data' => $appointments ], 200);
     }

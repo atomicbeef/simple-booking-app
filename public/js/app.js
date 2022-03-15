@@ -19373,45 +19373,217 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "default": () => (__WEBPACK_DEFAULT_EXPORT__)
 /* harmony export */ });
-/* harmony import */ var vue3_datepicker__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! vue3-datepicker */ "./node_modules/vue3-datepicker/dist/vue3-datepicker.esm.js");
-/* harmony import */ var vue__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! vue */ "./node_modules/vue/dist/vue.esm-bundler.js");
+/* harmony import */ var axios__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! axios */ "./node_modules/axios/index.js");
+/* harmony import */ var axios__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(axios__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var vue3_datepicker__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! vue3-datepicker */ "./node_modules/vue3-datepicker/dist/vue3-datepicker.esm.js");
+/* harmony import */ var vue__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! vue */ "./node_modules/vue/dist/vue.esm-bundler.js");
 
 
- // The first 9 characters of an ISO date string are the year, month, and day
-// We don't care about the time so we won't store it
+
+ // Minimize URL boilerplate
 
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = ({
   setup: function setup(__props, _ref) {
     var expose = _ref.expose;
     expose();
-    var currentDate = new Date().toISOString.substring(0, 10);
-    var datePicked = (0,vue__WEBPACK_IMPORTED_MODULE_1__.ref)(new Date());
-    var name = (0,vue__WEBPACK_IMPORTED_MODULE_1__.ref)('');
-    var pastAppointments = (0,vue__WEBPACK_IMPORTED_MODULE_1__.reactive)({
+    var http = axios__WEBPACK_IMPORTED_MODULE_0___default().create({
+      baseURL: "http://localhost/api",
+      headers: {
+        "Content-type": "application/json"
+      }
+    });
+    var currentDate = new Date();
+    var datePicked = (0,vue__WEBPACK_IMPORTED_MODULE_2__.ref)(new Date());
+    var name = (0,vue__WEBPACK_IMPORTED_MODULE_2__.ref)(""); // At first I figured this would be the simplest way to manage the appointment state while minimizing network traffic
+    // This unfortunately led to the delete and edit operations being much more complicated and ugly than they should be
+    // Given more time, I would definitely refactor this
+
+    var pastAppointments = (0,vue__WEBPACK_IMPORTED_MODULE_2__.reactive)({
       rows: []
     });
-    var futureAppointments = (0,vue__WEBPACK_IMPORTED_MODULE_1__.reactive)({
+    var futureAppointments = (0,vue__WEBPACK_IMPORTED_MODULE_2__.reactive)({
       rows: []
+    }); // Retrieve all appointments from the backend
+
+    http.get("/appointments").then(function (response) {
+      // Sort the appointments into the past and future arrays
+      response.data.data.forEach(function (appointment) {
+        if (new Date(appointment.date) >= currentDate) {
+          futureAppointments.rows.push({
+            id: appointment.id,
+            date: appointment.date,
+            name: appointment.name
+          });
+        } else {
+          pastAppointments.rows.push({
+            id: appointment.id,
+            date: appointment.date,
+            name: appointment.name
+          });
+        }
+      }); // Sort appointments by date
+      // I don't know why this isn't working
+
+      futureAppointments.rows.sort(function compare(a, b) {
+        a.date > b.date ? 1 : a.date < b.date ? -1 : 0;
+      });
+      pastAppointments.rows.sort(function compare(a, b) {
+        a.date > b.date ? 1 : a.date < b.date ? -1 : 0;
+      });
+    }, function (error) {
+      alert("Error fetching appointments!");
     });
 
     function addAppointment() {
-      var dateFormatted = datePicked.value.toISOString().substring(0, 10);
-      pastAppointments.rows.push({
-        "date": dateFormatted,
-        "name": name.value
+      // datePicked could potentially change in between the POST request being made and a response
+      // being received, so we create a new Date object using dateFormatted, as it's guaranteed to be the same
+      var dateCached = datePicked.value; // Format the date to be YYYY-MM-DD, ignoring time
+
+      var dateFormatted = String(dateCached.getFullYear()) + "-";
+
+      if (dateCached.getMonth() + 1 < 10) {
+        dateFormatted += "0" + (dateCached.getMonth() + 1) + "-";
+      } else {
+        dateFormatted += dateCached.getMonth() + 1 + "-";
+      }
+
+      if (dateCached.getDate() < 10) {
+        dateFormatted += "0" + dateCached.getDate();
+      } else {
+        dateFormatted += dateCached.getDate();
+      }
+
+      http.post("/add", {
+        date: dateFormatted,
+        name: name.value
+      }).then(function (response) {
+        if (dateCached >= currentDate) {
+          futureAppointments.rows.push({
+            id: response.data,
+            date: dateFormatted,
+            name: name.value
+          });
+        } else {
+          pastAppointments.rows.push({
+            id: response.data,
+            date: dateFormatted,
+            name: name.value
+          });
+        }
+      }, function (error) {
+        alert("Error creating appointment!");
+      });
+    }
+
+    function deleteAppointment(id) {
+      // Redefine axios options since we're not sending JSON
+      var options = {
+        method: "delete",
+        url: "http://localhost/api/delete",
+        data: "id=" + id,
+        headers: {
+          "Content-type": "application/x-www-form-urlencoded"
+        }
+      };
+      axios__WEBPACK_IMPORTED_MODULE_0___default()(options).then(function (response) {
+        // This should definitely be refactored
+        var futureIndex = futureAppointments.rows.findIndex(function (appointment) {
+          return appointment.id === id;
+        });
+
+        if (futureIndex > -1) {
+          futureAppointments.rows.splice(futureIndex, 1);
+        }
+
+        var pastIndex = pastAppointments.rows.findIndex(function (appointment) {
+          return appointment.id === id;
+        });
+
+        if (pastIndex > -1) {
+          pastAppointments.rows.splice(pastIndex, 1);
+        }
+      }, function (error) {
+        alert("Error deleting appointment!");
+      });
+    }
+
+    function editAppointment(id) {
+      var dateCached = datePicked.value; // Also cache the name for the same reason as the date
+
+      var nameCached = name.value;
+      var dateFormatted = String(dateCached.getFullYear()) + "-";
+
+      if (dateCached.getMonth() + 1 < 10) {
+        dateFormatted += "0" + (dateCached.getMonth() + 1) + "-";
+      } else {
+        dateFormatted += dateCached.getMonth() + 1 + "-";
+      }
+
+      if (dateCached.getDate() < 10) {
+        dateFormatted += "0" + dateCached.getDate();
+      } else {
+        dateFormatted += dateCached.getDate();
+      }
+
+      var options = {
+        method: "patch",
+        url: "http://localhost/api/update",
+        data: "id=" + id + "&date=" + dateFormatted + "&name=" + name.value,
+        headers: {
+          "Content-type": "application/x-www-form-urlencoded"
+        }
+      };
+      axios__WEBPACK_IMPORTED_MODULE_0___default()(options).then(function (response) {
+        // Find where the appointment is so that it can be updated
+        // However, it may also need to be moved to the other array due to the date changing
+        // To make the code simpler, the appointment is always removed and replaced
+        // This is very messy and bad for many reasons
+        var futureIndex = futureAppointments.rows.findIndex(function (appointment) {
+          return appointment.id === id;
+        });
+
+        if (futureIndex > -1) {
+          futureAppointments.rows.splice(futureIndex, 1);
+        }
+
+        var pastIndex = pastAppointments.rows.findIndex(function (appointment) {
+          return appointment.id === id;
+        });
+
+        if (pastIndex > -1) {
+          pastAppointments.rows.splice(pastIndex, 1);
+        }
+
+        var appointment = {
+          id: id,
+          date: dateFormatted,
+          name: nameCached
+        };
+
+        if (dateCached >= currentDate) {
+          futureAppointments.rows.push(appointment);
+        } else {
+          pastAppointments.rows.push(appointment);
+        }
+      }, function (error) {
+        alert("Error editing appointment!");
       });
     }
 
     var __returned__ = {
+      http: http,
       currentDate: currentDate,
       datePicked: datePicked,
       name: name,
       pastAppointments: pastAppointments,
       futureAppointments: futureAppointments,
       addAppointment: addAppointment,
-      Datepicker: vue3_datepicker__WEBPACK_IMPORTED_MODULE_0__["default"],
-      reactive: vue__WEBPACK_IMPORTED_MODULE_1__.reactive,
-      ref: vue__WEBPACK_IMPORTED_MODULE_1__.ref
+      deleteAppointment: deleteAppointment,
+      editAppointment: editAppointment,
+      axios: (axios__WEBPACK_IMPORTED_MODULE_0___default()),
+      Datepicker: vue3_datepicker__WEBPACK_IMPORTED_MODULE_1__["default"],
+      reactive: vue__WEBPACK_IMPORTED_MODULE_2__.reactive,
+      ref: vue__WEBPACK_IMPORTED_MODULE_2__.ref
     };
     Object.defineProperty(__returned__, '__isScriptSetup', {
       enumerable: false,
@@ -19461,26 +19633,57 @@ var _hoisted_6 = {
 
 var _hoisted_7 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createTextVNode)(" Date: ");
 
-var _hoisted_8 = {
+var _hoisted_8 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", null, [/*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("h3", null, "To edit an appointment, set the name and date, and then click the edit button on the appointment you wish to edit.")], -1
+/* HOISTED */
+);
+
+var _hoisted_9 = {
+  "class": "future-appointments"
+};
+
+var _hoisted_10 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("h2", {
+  "class": "header-color"
+}, "Future Appointments:", -1
+/* HOISTED */
+);
+
+var _hoisted_11 = {
+  id: "future"
+};
+
+var _hoisted_12 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("thead", null, [/*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("tr", null, [/*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th", null, "Date"), /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th", null, "Name"), /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th"), /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th")])], -1
+/* HOISTED */
+);
+
+var _hoisted_13 = ["onClick"];
+var _hoisted_14 = ["onClick"];
+var _hoisted_15 = {
   "class": "past-appointments"
 };
 
-var _hoisted_9 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("h2", {
+var _hoisted_16 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("h2", {
   "class": "header-color"
 }, "Past Appointments:", -1
 /* HOISTED */
 );
 
-var _hoisted_10 = {
+var _hoisted_17 = {
   id: "past"
 };
 
-var _hoisted_11 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("thead", null, [/*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("tr", null, [/*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th", null, "Date"), /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th", null, "Name")])], -1
+var _hoisted_18 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("thead", null, [/*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("tr", null, [/*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th", null, "Date"), /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th", null, "Name"), /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th"), /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("th")])], -1
+/* HOISTED */
+);
+
+var _hoisted_19 = ["onClick"];
+var _hoisted_20 = ["onClick"];
+
+var _hoisted_21 = /*#__PURE__*/(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("footer", null, null, -1
 /* HOISTED */
 );
 
 function render(_ctx, _cache, $props, $setup, $data, $options) {
-  return (0,vue__WEBPACK_IMPORTED_MODULE_0__.openBlock)(), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementBlock)("div", _hoisted_1, [_hoisted_2, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_3, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_4, [_hoisted_5, (0,vue__WEBPACK_IMPORTED_MODULE_0__.withDirectives)((0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("input", {
+  return (0,vue__WEBPACK_IMPORTED_MODULE_0__.openBlock)(), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementBlock)(vue__WEBPACK_IMPORTED_MODULE_0__.Fragment, null, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_1, [_hoisted_2, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_3, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_4, [_hoisted_5, (0,vue__WEBPACK_IMPORTED_MODULE_0__.withDirectives)((0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("input", {
     "onUpdate:modelValue": _cache[0] || (_cache[0] = function ($event) {
       return $setup.name = $event;
     }),
@@ -19498,17 +19701,53 @@ function render(_ctx, _cache, $props, $setup, $data, $options) {
     "class": "new-appointment-add"
   }, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("button", {
     onClick: $setup.addAppointment
-  }, "Add Appointment")])]), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_8, [_hoisted_9, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("table", _hoisted_10, [_hoisted_11, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("tbody", null, [((0,vue__WEBPACK_IMPORTED_MODULE_0__.openBlock)(true), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementBlock)(vue__WEBPACK_IMPORTED_MODULE_0__.Fragment, null, (0,vue__WEBPACK_IMPORTED_MODULE_0__.renderList)($setup.pastAppointments.rows, function (row) {
+  }, "Add Appointment")])]), _hoisted_8, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_9, [_hoisted_10, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("table", _hoisted_11, [_hoisted_12, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("tbody", null, [((0,vue__WEBPACK_IMPORTED_MODULE_0__.openBlock)(true), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementBlock)(vue__WEBPACK_IMPORTED_MODULE_0__.Fragment, null, (0,vue__WEBPACK_IMPORTED_MODULE_0__.renderList)($setup.futureAppointments.rows, function (row) {
     return (0,vue__WEBPACK_IMPORTED_MODULE_0__.openBlock)(), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementBlock)("tr", {
       key: row
     }, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, (0,vue__WEBPACK_IMPORTED_MODULE_0__.toDisplayString)(row.date), 1
     /* TEXT */
     ), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, (0,vue__WEBPACK_IMPORTED_MODULE_0__.toDisplayString)(row.name), 1
     /* TEXT */
-    )]);
+    ), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("button", {
+      onClick: function onClick($event) {
+        return $setup.editAppointment(row.id);
+      }
+    }, "Edit", 8
+    /* PROPS */
+    , _hoisted_13)]), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("button", {
+      onClick: function onClick($event) {
+        return $setup.deleteAppointment(row.id);
+      }
+    }, "Delete", 8
+    /* PROPS */
+    , _hoisted_14)])]);
   }), 128
   /* KEYED_FRAGMENT */
-  ))])])])]);
+  ))])])]), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("div", _hoisted_15, [_hoisted_16, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("table", _hoisted_17, [_hoisted_18, (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("tbody", null, [((0,vue__WEBPACK_IMPORTED_MODULE_0__.openBlock)(true), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementBlock)(vue__WEBPACK_IMPORTED_MODULE_0__.Fragment, null, (0,vue__WEBPACK_IMPORTED_MODULE_0__.renderList)($setup.pastAppointments.rows, function (row) {
+    return (0,vue__WEBPACK_IMPORTED_MODULE_0__.openBlock)(), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementBlock)("tr", {
+      key: row
+    }, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, (0,vue__WEBPACK_IMPORTED_MODULE_0__.toDisplayString)(row.date), 1
+    /* TEXT */
+    ), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, (0,vue__WEBPACK_IMPORTED_MODULE_0__.toDisplayString)(row.name), 1
+    /* TEXT */
+    ), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("button", {
+      onClick: function onClick($event) {
+        return $setup.editAppointment(row.id);
+      }
+    }, "Edit", 8
+    /* PROPS */
+    , _hoisted_19)]), (0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("td", null, [(0,vue__WEBPACK_IMPORTED_MODULE_0__.createElementVNode)("button", {
+      onClick: function onClick($event) {
+        return $setup.deleteAppointment(row.id);
+      }
+    }, "Delete", 8
+    /* PROPS */
+    , _hoisted_20)])]);
+  }), 128
+  /* KEYED_FRAGMENT */
+  ))])])])]), _hoisted_21], 64
+  /* STABLE_FRAGMENT */
+  );
 }
 
 /***/ }),
@@ -19585,7 +19824,7 @@ __webpack_require__.r(__webpack_exports__);
 
 var ___CSS_LOADER_EXPORT___ = _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0___default()(function(i){return i[1]});
 // Module
-___CSS_LOADER_EXPORT___.push([module.id, "\nhtml, body {\n        background-color: #dce1e3;\n        color: #5c5f58;\n        height: 100vh;\n        margin: 0;\n        font-size: 25px;\n}\ntable {\n        border-collapse: collapse;\n        border: 5px solid #5c5f58;\n        margin: 10px 10px 0 10px;\n        text-align: center;\n}\ntable th {\n        padding: 8px;\n        min-width: 30px;\n        border-right: 3px solid #5c5f58;\n}\ntable td {\n        padding: 8px;\n        border-right: 3px solid #5c5f58;\n}\ntable tr:nth-child(even) {\n        background-color: #ffffff;\n}\n.content {\n        align-items: center;\n        flex-direction: column;\n        display: flex;\n        justify-content: center;\n        position: relative;\n}\n.title {\n        font-size: 35px;\n}\n.header-color {\n        color: #b73225;\n}\n.new-appointment {\n        padding-top: 30px;\n}\n.new-appointment-date {\n        display: inline-flex;\n        gap: 5px;\n}\n.new-appointment-add {\n        padding-top: 20px;\n}\n.past-appointments {\n        padding-top: 50px;\n}\n", ""]);
+___CSS_LOADER_EXPORT___.push([module.id, "\nhtml, body {\n        background-color: #1d3557;\n        color: #ffffff;\n        height: 100vh;\n        margin: 0;\n        font-size: 25px;\n}\nfooter {\n        padding-top: 50px;\n}\ntable {\n        border-collapse: collapse;\n        margin: 10px 10px 0 10px;\n        text-align: left;\n        overflow-x: auto;\n        min-width: 80vw;\n}\ntable th {\n        padding: 8px;\n        background-color: #13233b;\n}\ntable td {\n        padding: 8px;\n}\ntable tr:nth-child(even) {\n        background-color: #13233b;\n}\ntable tr:nth-child(odd) {\n        background-color: #1b3252;\n}\n.content {\n        align-items: center;\n        flex-direction: column;\n        display: flex;\n        justify-content: center;\n        position: relative;\n}\n.title {\n        font-size: 35px;\n}\n.header-color {\n        color: #e63946;\n}\n.new-appointment {\n        padding-top: 30px;\n}\n.new-appointment-date {\n        display: inline-flex;\n        gap: 5px;\n}\n.new-appointment-add {\n        padding-top: 20px;\n}\n.past-appointments {\n        padding-top: 50px;\n}\n", ""]);
 // Exports
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
 
